@@ -1,0 +1,20 @@
+# REVIEW.md
+
+List every defect you found in the starter `app/main.py` (helpers and endpoints). For each one:
+
+| # | Where (function / line) | What is wrong | How you'd notice it (test, input, or symptom) | How you fixed it | Verification |
+|---|---|---|---|---|---|
+| 1 | `health` | Returns `ok` without contacting MongoDB. | Stop MongoDB; starter still returns 200. | Ping MongoDB and return 503 on a database error. | `test_health_checks_mongodb_and_returns_503_when_unavailable` |
+| 2 | `compute_late_minutes` | Uses a naive same-day start and misses the strict grace rule at second precision. | Check 09:40:00 and 09:40:01 for a 09:30 shift. | Compare aware IST instants, truncate to seconds, and floor late minutes. | `test_time_rules_cover_grace_overtime_overnight_rounding_and_half_day` |
+| 3 | `compute_work_hours` | Float rounding may use ties-to-even instead of half-up. | Check an exact two-decimal halfway duration. | Use `Decimal` with `ROUND_HALF_UP`. | `test_time_rules_cover_grace_overtime_overnight_rounding_and_half_day` |
+| 4 | `compute_overtime` | Keeps overnight shift end on the same day and counts overtime below 30 minutes. | Try 22:00-06:00 or 29 minutes overtime. | Roll shift end to the next day and require 30 whole minutes. | `test_overnight_punch_out_uses_shift_start_date_and_next_day_end` |
+| 5 | `create_employee` | Check-then-insert races; creation time and response format are wrong. | Concurrent duplicate create or inspect `created_at`. | Add unique index, map duplicate key to 409, return epoch milliseconds. | `test_create_employee_uses_epoch_and_maps_duplicate_key`; `test_concurrent_employee_creation_has_one_success` |
+| 6 | `list_employees` | Skip starts at `page * page_size`, total ignores department, results are unsorted. | Request filtered pages 1 and 2. | Use `(page - 1) * page_size`, same-filter count, stable code sort, and bounds. | `test_employee_validation_and_pagination_use_filtered_query` |
+| 7 | `punch_in` | Unknown employee errors, local-time interpretation, overnight dates, and duplicate races are mishandled. | Punch unknown employee or race same-day calls. | Validate employee/input, apply IST date rules, and rely on the unique natural key. | `test_punch_in_unknown_employee_and_success_with_duplicate_conflict`; `test_concurrent_same_day_punch_in_has_one_success` |
+| 8 | `list_attendance` | Loads matching records into Python before counting, sorting, and slicing. | Large collection or later page request. | Count/filter/sort/skip/limit in MongoDB. | `test_attendance_pagination_and_date_validation` |
+| 9 | Missing `POST /attendance/punch-out` | No close operation or derived calculations. | Call the contracted route. | Conditionally update only an open record and compute derived fields. | `test_punch_out_missing_record_and_atomic_success`; `test_concurrent_punch_out_has_one_success` |
+| 10 | Missing `PATCH /attendance/{emp_code}/{date}` | No validation or append-only audit trail. | Correct a timestamp and inspect history. | Recompute derived fields and atomically append actual field changes. | `test_regularization_appends_history_and_recomputes_derived_values` |
+| 11 | Missing analytics routes | Monthly, department, leaderboard, and trend aggregations are absent. | Request reports with empty logs, ties, or missing dates. | Use MongoDB pipelines, employee-driven headcount, `$rank`, and gap filling/window average. | `test_monthly_analytics_uses_aggregation_and_handles_no_logs`; `test_analytics_include_unlogged_employees_ties_and_trend_gaps` |
+| 12 | Missing explain route and indexes | No plan inspection or query-supporting indexes. | Request explain or inspect plans. | Create indexes idempotently and expose execution-stat explain. | `test_explain_endpoints_and_required_parameters`; `test_required_indexes_exist_and_natural_keys_are_unique` |
+
+**Not defects:** `date` and `joined_on` are stored as strings intentionally, while instants are BSON datetimes. The schema’s lack of a holiday calendar is also intentional; working days are Monday-Friday only.
